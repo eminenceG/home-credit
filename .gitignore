@@ -1,2 +1,7 @@
 # Dataset
 input
+
+# notebooks
+notebooks/*.csv
+notebooks/.ipynb_checkpoints
+
