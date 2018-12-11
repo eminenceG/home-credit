@@ -49,7 +49,6 @@ def set_categorical_labels(dataset)
     row  
   end
   puts "finish setting features to be String"
-  return dataset
 end
 
 def preprocess(dataset)
@@ -112,7 +111,7 @@ end
 
 # Returns the sql to get all columns in features from the application_train table
 def get_sql_from_features(features)
-  sql = "SELECT target, sk_id_curr"
+  sql = "SELECT label, sk_id_curr"
   features.each {|f| sql = sql + ", " + f}
   sql = sql + " FROM application_train"
   return sql
@@ -257,6 +256,7 @@ end
 #                                               one-hot encodeds features bease on the unique categorial values in this
 #                                               feature
 def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_encode)
+  categorial_features = [] 
   categorical_features_one_hot_encode.each do |k, v|
     if v.length > 2
       dataset.each do |r|
@@ -265,6 +265,7 @@ def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_enc
           if i == 0
             # for the one hot encoding, we hope to leave out one category  
           else
+            categorial_features << r
             value = new_feature.split("*")[2]
             if r["features"][k] == value
               r["features"][new_feature] = 1
@@ -277,12 +278,13 @@ def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_enc
         r["features"].delete(k)
       end
     else
+      categorial_features << k
       dataset.each do |r|
         r["features"][k] = r["features"][k].to_f
       end
     end
   end
-  return dataset
+  return categorial_features
 end
 
 # Fill missing values using the average value of the feature, the change is in-place
@@ -302,12 +304,10 @@ def fill_numeric_missing_values(numerical_features, dataset)
 end
 
 def score_binary_classification_model(data, weights, model)
-  ### BEGIN SOLUTION
   scores = data.collect do |row|
-    s = model.predict row, weights
+    s = model.predict(row, weights)
     [s, row["label"] > 0 ? 1.0 : 0.0]
   end
-  ### END SOLUTION
   return scores
 end
 
@@ -317,6 +317,27 @@ end
 
 def norm w
   Math.sqrt(dot(w,w))
+end
+
+def calc_auc_only(scores)
+  total_neg = scores.inject(0.0) {|u,s| u += (1 - s.last)}
+  total_pos = scores.inject(0.0) {|u,s| u += s.last}
+  c_neg = 0.0
+  c_pos = 0.0
+  fp = [0.0]
+  tp = [0.0]
+  auc = 0.0
+  scores.sort_by {|s| -s.first}.each do |s|
+    c_neg += 1 if s.last <= 0
+    c_pos += 1 if s.last > 0  
+
+    fpr = c_neg / total_neg
+    tpr = c_pos / total_pos
+    auc += 0.5 * (tpr + tp.last) * (fpr - fp.last)
+    fp << fpr
+    tp << tpr
+  end
+  return auc
 end
 
 # ================================================================== #
@@ -347,4 +368,56 @@ end
 # ================================================================== #
 
 
+# This class is used to impute the missing values in the data, only works for numeric features.
+class SimpleImputer
+  def fit(dataset)
+    features = dataset["features"]
+    data = dataset["data"]
+    features.each do |f|
+      series = data.collect {|r| r["features"][f]}.select {|x| x != ''}
+      mean = series.sum(0.0) / series.size
+      data.each do |r|
+        if r["features"][f] == ''
+          r["features"][f] = mean
+        end
+      end
+    end
+  end
+end
 
+# This class is a normalizer that is able to normalize numeric features in the
+# dataset. We will use Z normlize.   
+class Normalizer
+
+  # Normalizes numeric features in the dataset 
+  def normalize(dataset, numeric_features)
+    data = dataset["data"]
+    means = Hash.new
+    stdevs = Hash.new
+    numeric_features.each do |f|
+      x = data.collect {|r| r["features"][f]}.select {|d| d != ''}
+      means[f] = mean(x)
+      stdevs[f] = stdev(x)    
+      if (stdevs[f] == 0.0)
+        next
+      end
+      data.each do |r|
+        if r["features"][f] == ''
+          next
+        end
+        r["features"][f] = (r["features"][f] - means[f]) / stdevs[f]
+      end
+    end
+  end
+
+  def mean x
+    sum = x.inject(0.0) {|u,v| u += v}
+    sum / x.size
+  end
+
+  def stdev x
+    m = mean x
+    sum = x.inject(0.0) {|u,v| u += (v - m) ** 2.0}
+    Math.sqrt(sum / (x.size - 1))
+  end
+end
