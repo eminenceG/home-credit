@@ -1,11 +1,12 @@
 require "csv"
 require "./helpers"
 require "./models.rb"
+require "daru"
 
 def read_dataset_from_csv(prefix)
-  features = ['EXT_SOURCE_3', 'DAYS_BIRTH', 'DAYS_ID_PUBLISH', 'DAYS_REGISTRATION', 'DAYS_EMPLOYED', 'AMT_ANNUITY',
-    'DAYS_LAST_PHONE_CHANGE', 'AMT_CREDIT', 'EXT_SOURCE_1', 'AMT_INCOME_TOTAL', 'REGION_POPULATION_RELATIVE',
-    'AMT_GOODS_PRICE', 'HOUR_APPR_PROCESS_START']
+  # features = ['EXT_SOURCE_3', 'DAYS_BIRTH', 'DAYS_ID_PUBLISH', 'DAYS_REGISTRATION', 'DAYS_EMPLOYED', 'AMT_ANNUITY',
+  #   'DAYS_LAST_PHONE_CHANGE', 'AMT_CREDIT', 'EXT_SOURCE_1', 'AMT_INCOME_TOTAL', 'REGION_POPULATION_RELATIVE',
+  #   'AMT_GOODS_PRICE', 'HOUR_APPR_PROCESS_START']
   data = []
   classes = Hash.new {|h,k| h[k] = 0}
   header = []
@@ -14,7 +15,7 @@ def read_dataset_from_csv(prefix)
       header = l.chomp.split(",")
     else
       # TODO: delete later, just for speed
-      # next if i > 10000
+      # next if i > 100000
       a = CSV.parse(l)
       next if a[0].empty?
       row = Hash.new(0.0)
@@ -27,9 +28,10 @@ def read_dataset_from_csv(prefix)
         elsif k == "SK_ID_CURR" 
           row[k.downcase] = v.to_f
         else
-          if !features.include?(k)
-            next
-          end
+          # TODO: delete
+          # if !features.include?(k)
+          #   next
+          # end
           row["features"][k.downcase] = is_number?(v) ? v.to_f : v.to_s
         end
       end
@@ -37,8 +39,8 @@ def read_dataset_from_csv(prefix)
       data << row
     end
   end
-  # return {"classes" => classes, "features" => header[2, header.size - 1].map {|x| x.downcase}, "data" => data}
-  return {"classes" => classes, "features" => features, "data" => data}
+  return {"classes" => classes, "features" => header[2, header.size - 1].map {|x| x.downcase}, "data" => data}
+  # return {"classes" => classes, "features" => features, "data" => data}
 end
 
 # Sets the categorical features' values to be string type.
@@ -85,32 +87,43 @@ end
 
 # Trains the model using SGD
 def train(sgd, obj, w, train_set, num_epoch = 500, batch_size = 2000)
-  num_epoch.times do |i|
-    if (i % 50 == 0)
-      puts "# epoch: #{i}"
+  i = 0
+  iters = []
+  losses = []
+
+  num_epoch.times do |t|
+    if (t % 50 == 0)
+      puts "# epoch: #{t}"
     end
     train_set["data"].each_slice(batch_size) do |batch|    
-      sgd.update batch
+      sgd.update(batch)
+      iters << i
+      losses << obj.func(batch, sgd.weights)
+      i += 1
     end
   end
-  
   scores = score_binary_classification_model(train_set["data"], w, obj)
   train_auc = calc_auc_only(scores)
-  return train_auc
+  puts train_auc
+  return [sgd, iters, losses]
 end
 
 # Gets the trained model from the train_set.
 def train_one_classifier(dataset)
   model = LogisticRegressionModelL2.new(0.0)
-  lr = 2e-1
+  lr = 0.1
   w = Hash.new {|h,k| h[k] = (rand * 0.1) - 0.05}
   sgd = StochasticGradientDescent.new(model, w, lr)
-  puts train(sgd, model, w, dataset, num_epoch = 50, batch_size = 200)
+  sgd, iter, losses = train(sgd, model, w, dataset, num_epoch = 1, batch_size = 200)
+  df = Daru::DataFrame.new({x: iter, y: losses})
+  df.plot(type: :line, x: :x, y: :y) do |plot, diagram|
+    plot.x_label "Batches"
+    plot.y_label "Cumulative Loss"
+  end.export_html
   return sgd
 end
 
 if __FILE__ == $0
   dataset = prepare_data()
-  puts dataset["data"][0]
   sgd = train_one_classifier(dataset)
 end
