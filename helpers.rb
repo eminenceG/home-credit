@@ -237,7 +237,7 @@ def get_numeric_cateforical_features_from_the_raw_dataset(dataset)
 end
 
 def get_one_hot_feature_map_from_the_origin_dataset(dataset)
-  categorical_features = get_numeric_cateforical_features_from_the_raw_dataset(dataset)[1]
+  numeric_features, categorical_features = get_numeric_cateforical_features_from_the_raw_dataset(dataset)
   categorical_features_one_hot_encode = Hash.new
   categorical_features.each do |f|
     uniq_values = dataset.select{|r| r["features"][f] != ""}.collect {|r| r["features"][f]}.uniq
@@ -309,6 +309,14 @@ def score_binary_classification_model(data, weights, model)
   end
   ### END SOLUTION
   return scores
+end
+
+def dot x, w
+  x.keys.select {|k| w.has_key?(k)}.inject(0.0) {|u, k| u += x[k] * w[k]}
+end
+
+def norm w
+  Math.sqrt(dot(w,w))
 end
 
 # ================================================================== #
