@@ -18,9 +18,7 @@ end
 def create_dataset(db, sql)
   dataset = []
   db.execute sql do |row|
-    # BEGIN YOUR CODE
     dataset << parse_row_to_sample(row)
-    #END YOUR CODE
   end
   puts "finish getting data from the server"
   return dataset
@@ -31,10 +29,10 @@ end
 
 # Sets the categorical features' values to be string type.
 # dataset <- dataset
-def set_categorical_labels(dataset)
+def set_categorical_labels(data)
   puts "set categorical features to be String"
   
-  dataset = dataset.map do |row|
+  data = data.each do |row|
     row["features"].each do |k, v|
       # some futures are categorical, but use integer, so we need to convert to string 
       if (k.start_with?("flag"))
@@ -42,12 +40,12 @@ def set_categorical_labels(dataset)
       end
       
       # some features are numeric, but use string, so we need to convert to float number 
-      if (k.start_with?("obs_") or k.start_with?("def_"))
+      if (k.start_with?("obs_", "def_") && row["features"][k] != "")
         row["features"][k] = v.to_f  
       end
     end
-    row  
   end
+
   puts "finish setting features to be String"
 end
 
@@ -111,7 +109,7 @@ end
 
 # Returns the sql to get all columns in features from the application_train table
 def get_sql_from_features(features)
-  sql = "SELECT label, sk_id_curr"
+  sql = "SELECT TARGET, sk_id_curr"
   features.each {|f| sql = sql + ", " + f}
   sql = sql + " FROM application_train"
   return sql
@@ -227,7 +225,6 @@ def find_split_point_numeric(x, h0, fname)
   return [t_max, ig_max]
 end
 
-
 def get_numeric_cateforical_features_from_the_raw_dataset(dataset)
   features = dataset.flat_map {|row| row["features"].keys}.uniq
   categorical_features = features.select {|k| dataset.all? {|row| row["features"].fetch(k, "").is_a? String}}
@@ -250,55 +247,29 @@ def get_one_hot_feature_map_from_the_origin_dataset(dataset)
 end
 
 # One hot encodes the original dataset, the change to the dataset is in-place.
-
-# @param dataset: the original dataset
-# @param categorical_features_one_hot_encoding: a map that maps the original categorical features to the corresponding
-#                                               one-hot encodeds features bease on the unique categorial values in this
-#                                               feature
-def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_encode)
-  categorial_features = [] 
-  categorical_features_one_hot_encode.each do |k, v|
-    if v.length > 2
-      dataset.each do |r|
-        i = 0
-        v.each do |new_feature|
-          if i == 0
-            # for the one hot encoding, we hope to leave out one category  
-          else
-            categorial_features << r
-            value = new_feature.split("*")[2]
-            if r["features"][k] == value
-              r["features"][new_feature] = 1
-            else
-              r["features"][new_feature] = 0
-            end
-          end
-          i += 1
-        end
-        r["features"].delete(k)
-      end
-    else
-      categorial_features << k
-      dataset.each do |r|
-        r["features"][k] = r["features"][k].to_f
-      end
-    end
-  end
-  return categorial_features
-end
-
-# Fill missing values using the average value of the feature, the change is in-place
 #
-# numerical_features: all numerical_features as a list
-# dataset:            the dataset
-def fill_numeric_missing_values(numerical_features, dataset)
-  numerical_features.each do |f|
-    not_missing = dataset.select {|r| r["features"][f] != ""}.collect {|r| r["features"][f]}
-    mean = not_missing.sum(0.0) / not_missing.length
+# dataset:                               the original dataset
+# categorical_features_one_hot_encoding: a map that maps the original categorical features to the corresponding
+#                                        one-hot encodeds features bease on the unique categorial values in this
+#                                        feature
+def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_encode)
+  categorical_features_one_hot_encode.each do |k, v|
     dataset.each do |r|
-      if r["features"][f] == ""
-        r["features"][f] = mean
+      i = 0
+      v.each do |new_feature|
+        if i == 0
+          # for the one hot encoding, we hope to leave out one category  
+        else
+          value = new_feature.split("*")[2]
+          if r["features"][k] == value
+            r["features"][new_feature] = 1
+          else
+            r["features"][new_feature] = 0
+          end
+        end
+        i += 1
       end
+      r["features"].delete(k)
     end
   end
 end
@@ -319,7 +290,7 @@ def norm w
   Math.sqrt(dot(w,w))
 end
 
-def calc_auc_only(scores)
+def calc_auc_only_1(scores)
   total_neg = scores.inject(0.0) {|u,s| u += (1 - s.last)}
   total_pos = scores.inject(0.0) {|u,s| u += s.last}
   c_neg = 0.0
@@ -340,6 +311,26 @@ def calc_auc_only(scores)
   return auc
 end
 
+def calc_auc_only_2(scores)
+  sorted_by_disc = scores.sort { |a,b| a[0] <=> b[0] }
+  sorted_labels = sorted_by_disc.collect { |d| d[1] }
+  # now let's count the number of positive and negatives:
+  pos = sorted_labels.count { |l| l == 1 }.to_f 
+  neg = sorted_labels.count { |l| l == 0 }.to_f
+  auc = 0.0
+  c = 0.0 # how many positives we've seen thus far
+  n = 0.0 # how many negatives we've seen thus far
+  (sorted_labels.length - 1).downto(0) do |i| # walk backwards through the data...
+    if sorted_labels[i] > 0 # pos?
+      c += 1.0
+    else
+      n += 1.0
+      auc += (c / (pos * neg)) # update auc
+    end
+  end
+  return auc
+end
+
 # ================================================================== #
 
 # ============================= SGD ================================ #
@@ -352,8 +343,8 @@ class StochasticGradientDescent
     @n = 1.0
     @lr = lr
   end
-  def update x
 
+  def update x
     dw = @objective.grad(x, @weights)
     learning_rate = @lr / Math.sqrt(@n)
     
@@ -420,4 +411,15 @@ class Normalizer
     sum = x.inject(0.0) {|u,v| u += (v - m) ** 2.0}
     Math.sqrt(sum / (x.size - 1))
   end
+end
+
+# Magic code
+def magic
+  $test_db = SQLite3::Database.new "/home/abagher/cs6140-datasets/credit_risk_data_test.db", results_as_hash: true, readonly: true
+  predictions = eval_one_classifier_on $test_db, model
+  assert_equal 15510, predictions.size
+  scores = get_labels_for $test_db, predictions
+  assert_equal 15510, scores.size
+  fp, tp, auc = roc_curve scores
+  puts auc
 end
