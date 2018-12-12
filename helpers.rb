@@ -18,9 +18,7 @@ end
 def create_dataset(db, sql)
   dataset = []
   db.execute sql do |row|
-    # BEGIN YOUR CODE
     dataset << parse_row_to_sample(row)
-    #END YOUR CODE
   end
   puts "finish getting data from the server"
   return dataset
@@ -31,10 +29,10 @@ end
 
 # Sets the categorical features' values to be string type.
 # dataset <- dataset
-def set_categorical_labels(dataset)
+def set_categorical_labels(data)
   puts "set categorical features to be String"
   
-  dataset = dataset.map do |row|
+  data = data.each do |row|
     row["features"].each do |k, v|
       # some futures are categorical, but use integer, so we need to convert to string 
       if (k.start_with?("flag"))
@@ -42,12 +40,12 @@ def set_categorical_labels(dataset)
       end
       
       # some features are numeric, but use string, so we need to convert to float number 
-      if (k.start_with?("obs_") or k.start_with?("def_"))
+      if (k.start_with?("obs_", "def_") && row["features"][k] != "")
         row["features"][k] = v.to_f  
       end
     end
-    row  
   end
+
   puts "finish setting features to be String"
 end
 
@@ -227,7 +225,6 @@ def find_split_point_numeric(x, h0, fname)
   return [t_max, ig_max]
 end
 
-
 def get_numeric_cateforical_features_from_the_raw_dataset(dataset)
   features = dataset.flat_map {|row| row["features"].keys}.uniq
   categorical_features = features.select {|k| dataset.all? {|row| row["features"].fetch(k, "").is_a? String}}
@@ -250,36 +247,29 @@ def get_one_hot_feature_map_from_the_origin_dataset(dataset)
 end
 
 # One hot encodes the original dataset, the change to the dataset is in-place.
-
-# @param dataset: the original dataset
-# @param categorical_features_one_hot_encoding: a map that maps the original categorical features to the corresponding
-#                                               one-hot encodeds features bease on the unique categorial values in this
-#                                               feature
+#
+# dataset:                               the original dataset
+# categorical_features_one_hot_encoding: a map that maps the original categorical features to the corresponding
+#                                        one-hot encodeds features bease on the unique categorial values in this
+#                                        feature
 def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_encode)
-  categorial_features = [] 
   categorical_features_one_hot_encode.each do |k, v|
-    if v.length > 2
-      dataset.each do |r|
-        i = 0
-        v.each do |new_feature|
-          if i == 0
-            # for the one hot encoding, we hope to leave out one category  
+    dataset.each do |r|
+      i = 0
+      v.each do |new_feature|
+        if i == 0
+          # for the one hot encoding, we hope to leave out one category  
+        else
+          value = new_feature.split("*")[2]
+          if r["features"][k] == value
+            r["features"][new_feature] = 1
           else
-            value = new_feature.split("*")[2]
-            if r["features"][k] == value
-              r["features"][new_feature] = 1
-            else
-              r["features"][new_feature] = 0
-            end
+            r["features"][new_feature] = 0
           end
-          i += 1
         end
-        r["features"].delete(k)
+        i += 1
       end
-    else
-      dataset.each do |r|
-        r["features"][k] = r["features"][k].to_f
-      end
+      r["features"].delete(k)
     end
   end
 end
@@ -300,7 +290,7 @@ def norm w
   Math.sqrt(dot(w,w))
 end
 
-def calc_auc_only(scores)
+def calc_auc_only_1(scores)
   total_neg = scores.inject(0.0) {|u,s| u += (1 - s.last)}
   total_pos = scores.inject(0.0) {|u,s| u += s.last}
   c_neg = 0.0
@@ -317,6 +307,26 @@ def calc_auc_only(scores)
     auc += 0.5 * (tpr + tp.last) * (fpr - fp.last)
     fp << fpr
     tp << tpr
+  end
+  return auc
+end
+
+def calc_auc_only_2(scores)
+  sorted_by_disc = scores.sort { |a,b| a[0] <=> b[0] }
+  sorted_labels = sorted_by_disc.collect { |d| d[1] }
+  # now let's count the number of positive and negatives:
+  pos = sorted_labels.count { |l| l == 1 }.to_f 
+  neg = sorted_labels.count { |l| l == 0 }.to_f
+  auc = 0.0
+  c = 0.0 # how many positives we've seen thus far
+  n = 0.0 # how many negatives we've seen thus far
+  (sorted_labels.length - 1).downto(0) do |i| # walk backwards through the data...
+    if sorted_labels[i] > 0 # pos?
+      c += 1.0
+    else
+      n += 1.0
+      auc += (c / (pos * neg)) # update auc
+    end
   end
   return auc
 end
