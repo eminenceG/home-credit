@@ -284,22 +284,6 @@ def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_enc
   end
 end
 
-# Fill missing values using the average value of the feature, the change is in-place
-#
-# numerical_features: all numerical_features as a list
-# dataset:            the dataset
-def fill_numeric_missing_values(numerical_features, dataset)
-  numerical_features.each do |f|
-    not_missing = dataset.select {|r| r["features"][f] != ""}.collect {|r| r["features"][f]}
-    mean = not_missing.sum(0.0) / not_missing.length
-    dataset.each do |r|
-      if r["features"][f] == ""
-        r["features"][f] = mean
-      end
-    end
-  end
-end
-
 def score_binary_classification_model(data, weights, model)
   scores = data.collect do |row|
     s = model.predict(row, weights)
@@ -349,8 +333,8 @@ class StochasticGradientDescent
     @n = 1.0
     @lr = lr
   end
-  def update x
 
+  def update x
     dw = @objective.grad(x, @weights)
     learning_rate = @lr / Math.sqrt(@n)
     
@@ -417,4 +401,15 @@ class Normalizer
     sum = x.inject(0.0) {|u,v| u += (v - m) ** 2.0}
     Math.sqrt(sum / (x.size - 1))
   end
+end
+
+# Magic code
+def magic
+  $test_db = SQLite3::Database.new "/home/abagher/cs6140-datasets/credit_risk_data_test.db", results_as_hash: true, readonly: true
+  predictions = eval_one_classifier_on $test_db, model
+  assert_equal 15510, predictions.size
+  scores = get_labels_for $test_db, predictions
+  assert_equal 15510, scores.size
+  fp, tp, auc = roc_curve scores
+  puts auc
 end
