@@ -16,7 +16,7 @@ class LogisticRegressionModelL2
   
   def func data, w
     loss = data.inject(0.0) do |u,row| 
-      y = row["target"].to_f > 0 ? 1.0 : -1.0
+      y = row["label"].to_f > 0 ? 1.0 : -1.0
       x = row["features"]
       y_hat = dot(w,x)
       
@@ -29,7 +29,7 @@ class LogisticRegressionModelL2
   def grad data, w
     g = Hash.new {|h,k| h[k] = 0.0}
     data.each do |row| 
-      y = row["target"].to_f > 0 ? 1.0 : 0.0
+      y = row["label"].to_f > 0 ? 1.0 : 0.0
       x = row["features"]
       y_hat = x.keys.inject(0.0) {|s, k| s += w[k] * x[k]}
       syh = 1.0 / (1 + Math.exp(-y_hat))

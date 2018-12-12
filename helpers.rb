@@ -111,7 +111,7 @@ end
 
 # Returns the sql to get all columns in features from the application_train table
 def get_sql_from_features(features)
-  sql = "SELECT label, sk_id_curr"
+  sql = "SELECT TARGET, sk_id_curr"
   features.each {|f| sql = sql + ", " + f}
   sql = sql + " FROM application_train"
   return sql
@@ -265,7 +265,6 @@ def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_enc
           if i == 0
             # for the one hot encoding, we hope to leave out one category  
           else
-            categorial_features << r
             value = new_feature.split("*")[2]
             if r["features"][k] == value
               r["features"][new_feature] = 1
@@ -278,13 +277,11 @@ def one_hot_encoding_using_feature_map(dataset, categorical_features_one_hot_enc
         r["features"].delete(k)
       end
     else
-      categorial_features << k
       dataset.each do |r|
         r["features"][k] = r["features"][k].to_f
       end
     end
   end
-  return categorial_features
 end
 
 # Fill missing values using the average value of the feature, the change is in-place
