@@ -104,6 +104,72 @@ def extract_features(db)
   #END YOUR CODE
   return dataset
 end
+# ====================== Join Table functions ====================== #
+def group_data(data)
+  res = Hash.new
+  data.each do |r|
+    id = r["id"]
+    if !res.has_key?(id)
+      res[id] = Array.new
+    end
+    # puts id
+    # puts res[id].class
+    res[id] << r["features"]
+  end
+  return res
+end
+
+def agg_group_data(grouped, numeric_features, table_name)
+  res = Hash.new 
+  grouped.each do |k, v|
+    if !res.has_key?(k)
+      res[k] = Hash.new
+    end
+    res[k][table_name + "count"] = v.length
+    numeric_features.each do |f|
+      f = f.downcase
+      not_null = v.select {|r| r[f] != ""}.collect {|row| row[f]}
+      if (not_null.length == 0)
+        res[k][f + "_avg"] = ""
+        res[k][f + "_min"] = ""
+        res[k][f + "_max"] = ""
+        res[k][f + "_sum"] = ""
+        next
+      end
+
+      min = not_null.min
+      max = not_null.max
+      sum = not_null.sum(0.0)
+      avg = sum / not_null.length
+
+      res[k][f + "_avg"] = avg
+      res[k][f + "_min"] = min
+      res[k][f + "_max"] = max
+      res[k][f + "_sum"] = sum
+    end
+  end
+  return res
+end
+
+def merge_to_dataset(dataset, agged_data, numeric_features) 
+  data = dataset["data"]
+  data.each do |r|
+    id = r["id"].to_f
+    if agged_data.has_key?(id)
+      r["features"].merge!(agged_data[id])
+    else
+      tmp = Hash.new("")
+      numeric_features.each do |f|
+        f = f.downcase
+        tmp[f + "_avg"] = ""
+        tmp[f + "_min"] = ""
+        tmp[f + "_max"] = ""
+        tmp[f + "_sum"] = ""
+      end
+      r["features"].merge!(tmp)
+    end
+  end
+end
 
 # ====================== Helper functions ========================== #
 
@@ -364,12 +430,23 @@ class SimpleImputer
   def fit(dataset)
     features = dataset["features"]
     data = dataset["data"]
+    total_len = data.length
     features.each do |f|
       series = data.collect {|r| r["features"][f]}.select {|x| x != ''}
+      not_missing_len = series.length
+      missing_rate = 1 - not_missing_len.to_f / total_len.to_f
+      if (missing_rate > 0.75)
+        puts "Warning: #{f} missing rate: #{missing_rate}"
+      else 
+      end
       mean = series.sum(0.0) / series.size
       data.each do |r|
+        if (missing_rate > 0.75)
+          r["features"].delete(f)
+          next
+        end
         if r["features"][f] == ''
-          r["features"][f] = mean
+          r["features"][f] = (mean.nan? ? 0.0 : mean) 
         end
       end
     end
