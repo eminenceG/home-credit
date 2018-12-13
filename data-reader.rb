@@ -1,6 +1,6 @@
 require "csv"
 
-def read_dataset_from_csv(prefix, num_rows)
+def read_dataset_from_csv(prefix, num_rows, features=nil)
   # features = ['EXT_SOURCE_3', 'DAYS_BIRTH', 'DAYS_ID_PUBLISH', 'DAYS_REGISTRATION', 'DAYS_EMPLOYED', 'AMT_ANNUITY',
   #   'DAYS_LAST_PHONE_CHANGE', 'AMT_CREDIT', 'EXT_SOURCE_1', 'AMT_INCOME_TOTAL', 'REGION_POPULATION_RELATIVE',
   #   'AMT_GOODS_PRICE', 'HOUR_APPR_PROCESS_START']
@@ -27,13 +27,17 @@ def read_dataset_from_csv(prefix, num_rows)
         elsif k == "SK_ID_CURR" 
           row["id"] = v.to_f
         else
-          # TODO: delete
-          # if !features.include?(k)
-          #   next
-          # end
+
+          if features != nil && !features.include?(k)
+            next
+          end
 
           # original v is always a string
-          row["features"][k.downcase] = is_number?(v) ? v.to_f : v.to_s
+          if (v == nil) 
+            row["features"][k.downcase] = ""
+          else
+            row["features"][k.downcase] = is_number?(v) ? v.to_f : v.to_s
+          end
         end
       end
       row["features"]["bias"] = 1.0
@@ -41,8 +45,8 @@ def read_dataset_from_csv(prefix, num_rows)
     end
   end
   header << "bias"
-  return {"classes" => classes, "features" => header[2, header.size - 1].map {|x| x.downcase}, "data" => data}
-  # return {"classes" => classes, "features" => features, "data" => data}
+  # return {"classes" => classes, "features" => header[2, header.size - 1].map {|x| x.downcase}, "data" => data}
+  return {"classes" => classes, "features" => features, "data" => data}
 end
 
 # helper functions 
